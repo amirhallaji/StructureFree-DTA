@@ -5,6 +5,7 @@ A modular and scalable codebase for predicting drug-target interactions using de
 ## Project Structure
 
 - `config.py`: Configuration dataclasses for all aspects of the project
+- `config.yaml`: YAML configuration file with all parameters
 - `models.py`: Neural network model implementations
 - `datasets.py`: Dataset and dataloader implementations
 - `trainer.py`: Modular trainer with support for distributed training
@@ -17,7 +18,7 @@ A modular and scalable codebase for predicting drug-target interactions using de
 - **Distributed Training**: Support for DDP (DistributedDataParallel) and FSDP (FullyShardedDataParallel)
 - **Mixed Precision Training**: Automatic mixed precision for faster training
 - **Comprehensive Logging**: Detailed metrics tracking and visualization
-- **Flexible Configuration**: Dataclass-based configuration system
+- **Flexible Configuration**: YAML-based configuration system
 - **Gradient Accumulation**: Support for larger effective batch sizes
 - **Early Stopping**: Automatic early stopping to prevent overfitting
 
@@ -38,43 +39,60 @@ The model uses a dual-encoder architecture with:
 - NumPy
 - Matplotlib
 - scikit-learn
+- PyYAML
 
 ## Usage
+
+### Configuration
+
+All parameters are specified in a YAML configuration file. You can create your own configuration file based on the provided `config.yaml` template.
+
+The configuration file is organized into sections:
+- `model`: Model architecture parameters
+- `data`: Data paths and loading parameters
+- `training`: Training hyperparameters
+- `logging`: Logging and checkpoint settings
+- `distributed`: Distributed training options
+- Other top-level parameters like `seed` and `device`
 
 ### Basic Training
 
 ```bash
-python main.py --train_data data/train.csv --val_data data/val.csv
+python main.py --config_file config.yaml
 ```
 
 ### Distributed Training with DDP
 
 ```bash
-torchrun --nproc_per_node=4 main.py --distributed_backend ddp --train_data data/train.csv --val_data data/val.csv
+torchrun --nproc_per_node=4 main.py --config_file config_ddp.yaml
 ```
 
-### Mixed Precision Training
+### Creating Custom Configurations
 
-```bash
-python main.py --train_data data/train.csv --val_data data/val.csv --mixed_precision
+You can create custom configuration files for different experiments. For example:
+
+1. Create a file `config_experiment1.yaml`:
+```yaml
+# Inherit from base config.yaml and override only what you need
+model:
+  protein_model_name: "facebook/esm2_t12_35M_UR50D"
+  molecule_model_name: "DeepChem/ChemBERTa-77M-MTR"
+  
+data:
+  batch_size: 64
+  
+training:
+  learning_rate: 5.0e-5
+  weight_decay: 1.0e-5
+  early_stopping_patience: 15
+  
+logging:
+  experiment_name: "custom_experiment"
 ```
 
-### Custom Configuration
-
+2. Run with your custom config:
 ```bash
-python main.py \
-  --train_data data/train.csv \
-  --val_data data/val.csv \
-  --protein_model facebook/esm2_t12_35M_UR50D \
-  --molecule_model DeepChem/ChemBERTa-77M-MTR \
-  --batch_size 64 \
-  --epochs 200 \
-  --lr 5e-5 \
-  --weight_decay 1e-5 \
-  --patience 15 \
-  --grad_accum_steps 2 \
-  --mixed_precision \
-  --experiment_name custom_experiment
+python main.py --config_file config_experiment1.yaml
 ```
 
 ## Data Format

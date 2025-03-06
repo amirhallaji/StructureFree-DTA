@@ -1,0 +1,50 @@
+# Drug-Target Interaction Model Configuration
+
+# Model Configuration
+model:
+  protein_model_name: "facebook/esm2_t6_8M_UR50D"
+  molecule_model_name: "DeepChem/ChemBERTa-77M-MLM"
+  hidden_sizes: [1024, 768, 512, 256, 1]
+  inception_out_channels: 256
+  dropout: 0.05
+
+# Data Configuration
+data:
+  train_data_path: "data/train.csv"
+  val_data_path: "data/val.csv"
+  test_data_path: null
+  batch_size: 2
+  num_workers: 1
+  max_molecule_length: 32
+  max_protein_length: 128
+
+# Training Configuration
+training:
+  epochs: 100
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-6
+  scheduler_factor: 0.5
+  scheduler_patience: 5
+  scheduler_min_lr: 1.0e-7
+  loss_alpha: 0.5
+  gradient_accumulation_steps: 1
+  early_stopping_patience: 10
+  mixed_precision: true
+  clip_grad_norm: null
+
+# Logging Configuration
+logging:
+  log_dir: "logs"
+  save_dir: "checkpoints"
+  experiment_name: "drug_target_interaction"
+  log_interval: 30
+
+# Distributed Training Configuration
+distributed:
+  distributed_backend: "none"  # Options: none, ddp, fsdp
+  find_unused_parameters: false
+  fsdp_config: null
+
+# Other Configuration
+seed: 42
+device: "cuda" 

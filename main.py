@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import yaml
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,88 +15,103 @@ from utils import MetricTracker, set_seed, get_device, setup_distributed, cleanu
 
 
 def parse_args():
+    """Parse command line arguments"""
     parser = argparse.ArgumentParser(description="Drug-Target Interaction Prediction")
-    
-    # Data arguments
-    parser.add_argument("--train_data", type=str, default="data/train.csv", help="Path to training data")
-    parser.add_argument("--val_data", type=str, default="data/val.csv", help="Path to validation data")
-    parser.add_argument("--test_data", type=str, default=None, help="Path to test data")
-    
-    # Model arguments
-    parser.add_argument("--protein_model", type=str, default="facebook/esm2_t6_8M_UR50D", help="Protein language model")
-    parser.add_argument("--molecule_model", type=str, default="DeepChem/ChemBERTa-77M-MLM", help="Molecule language model")
-    
-    # Training arguments
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
-    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--weight_decay", type=float, default=1e-6, help="Weight decay")
-    parser.add_argument("--patience", type=int, default=10, help="Patience for early stopping")
-    parser.add_argument("--grad_accum_steps", type=int, default=1, help="Gradient accumulation steps")
-    parser.add_argument("--mixed_precision", action="store_true", help="Use mixed precision training")
-    
-    # Distributed training arguments
-    parser.add_argument("--distributed_backend", type=str, default="none", choices=["none", "ddp", "fsdp"], 
-                        help="Distributed training backend")
-    
-    # Logging arguments
-    parser.add_argument("--log_dir", type=str, default="logs", help="Log directory")
-    parser.add_argument("--save_dir", type=str, default="checkpoints", help="Checkpoint directory")
-    parser.add_argument("--experiment_name", type=str, default="drug_target_interaction", help="Experiment name")
-    
-    # Other arguments
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--device", type=str, default="cuda", help="Device to use (cuda or cpu)")
-    
+    parser.add_argument("--config_file", type=str, required=True, help="Path to YAML configuration file")
     return parser.parse_args()
 
 
-def update_config_from_args(config, args):
-    """Update config with command line arguments"""
+def load_yaml_config(config_file):
+    """Load configuration from YAML file"""
+    with open(config_file, 'r') as f:
+        yaml_config = yaml.safe_load(f)
+    return yaml_config
+
+
+def update_config_from_yaml(config, yaml_config):
+    """Update config from YAML configuration with simpler approach"""
+    # Get config sections, using empty dict if section is missing
+    model_config = yaml_config.get('model', {})
+    data_config = yaml_config.get('data', {})
+    training_config = yaml_config.get('training', {})
+    logging_config = yaml_config.get('logging', {})
+    distributed_config = yaml_config.get('distributed', {})
+    
     # Update model config
-    config.model.protein_model_name = args.protein_model
-    config.model.molecule_model_name = args.molecule_model
+    config.model.protein_model_name = model_config.get('protein_model_name', config.model.protein_model_name)
+    config.model.molecule_model_name = model_config.get('molecule_model_name', config.model.molecule_model_name)
+    config.model.hidden_sizes = model_config.get('hidden_sizes', config.model.hidden_sizes)
+    config.model.inception_out_channels = model_config.get('inception_out_channels', config.model.inception_out_channels)
+    config.model.dropout = model_config.get('dropout', config.model.dropout)
     
     # Update data config
-    config.data.train_data_path = args.train_data
-    config.data.val_data_path = args.val_data
-    config.data.test_data_path = args.test_data
-    config.data.batch_size = args.batch_size
+    config.data.train_data_path = data_config.get('train_data_path', config.data.train_data_path)
+    config.data.val_data_path = data_config.get('val_data_path', config.data.val_data_path)
+    config.data.test_data_path = data_config.get('test_data_path', config.data.test_data_path)
+    config.data.batch_size = data_config.get('batch_size', config.data.batch_size)
+    config.data.num_workers = data_config.get('num_workers', config.data.num_workers)
+    config.data.max_molecule_length = data_config.get('max_molecule_length', config.data.max_molecule_length)
+    config.data.max_protein_length = data_config.get('max_protein_length', config.data.max_protein_length)
     
     # Update training config
-    config.training.epochs = args.epochs
-    config.training.learning_rate = args.lr
-    config.training.weight_decay = args.weight_decay
-    config.training.early_stopping_patience = args.patience
-    config.training.gradient_accumulation_steps = args.grad_accum_steps
-    config.training.mixed_precision = args.mixed_precision
-    
-    # Update distributed config
-    config.distributed.distributed_backend = args.distributed_backend
+    config.training.epochs = training_config.get('epochs', config.training.epochs)
+    config.training.learning_rate = training_config.get('learning_rate', config.training.learning_rate)
+    config.training.weight_decay = training_config.get('weight_decay', config.training.weight_decay)
+    config.training.scheduler_factor = training_config.get('scheduler_factor', config.training.scheduler_factor)
+    config.training.scheduler_patience = training_config.get('scheduler_patience', config.training.scheduler_patience)
+    config.training.scheduler_min_lr = training_config.get('scheduler_min_lr', config.training.scheduler_min_lr)
+    config.training.loss_alpha = training_config.get('loss_alpha', config.training.loss_alpha)
+    config.training.gradient_accumulation_steps = training_config.get('gradient_accumulation_steps', config.training.gradient_accumulation_steps)
+    config.training.early_stopping_patience = training_config.get('early_stopping_patience', config.training.early_stopping_patience)
+    config.training.mixed_precision = training_config.get('mixed_precision', config.training.mixed_precision)
+    config.training.clip_grad_norm = training_config.get('clip_grad_norm', config.training.clip_grad_norm)
     
     # Update logging config
-    config.logging.log_dir = args.log_dir
-    config.logging.save_dir = args.save_dir
-    config.logging.experiment_name = args.experiment_name
+    config.logging.log_dir = logging_config.get('log_dir', config.logging.log_dir)
+    config.logging.save_dir = logging_config.get('save_dir', config.logging.save_dir)
+    config.logging.experiment_name = logging_config.get('experiment_name', config.logging.experiment_name)
+    config.logging.log_interval = logging_config.get('log_interval', config.logging.log_interval)
+    
+    # Update distributed config
+    config.distributed.distributed_backend = distributed_config.get('distributed_backend', config.distributed.distributed_backend)
+    config.distributed.find_unused_parameters = distributed_config.get('find_unused_parameters', config.distributed.find_unused_parameters)
+    config.distributed.fsdp_config = distributed_config.get('fsdp_config', config.distributed.fsdp_config)
     
     # Update other config
-    config.seed = args.seed
-    config.device = args.device
+    config.seed = yaml_config.get('seed', config.seed)
+    config.device = yaml_config.get('device', config.device)
     
     return config
 
 
 def main():
-    # add a little code to avoid fragmentation in gpu with os 
+    # Add environment variables to avoid GPU memory fragmentation 
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    
     # Parse arguments
     args = parse_args()
+    
+    # Load YAML configuration
+    yaml_config = load_yaml_config(args.config_file)
+    
+    # Create default config and update with YAML config
     config = Config()
-    config = update_config_from_args(config, args)
+    config = update_config_from_yaml(config, yaml_config)
+    
+    # Print configuration
+    print("Configuration:")
+    print(f"  Model: {config.model.protein_model_name}, {config.model.molecule_model_name}")
+    print(f"  Batch size: {config.data.batch_size}")
+    print(f"  Learning rate: {config.training.learning_rate}")
+    print(f"  Device: {config.device}")
+    print(f"  Backend: {config.distributed.distributed_backend}")
+    
+    # Set random seed
     set_seed(config.seed)
-
+    
+    # Get device
     device = get_device(config.device)
     
     # Initialize distributed training if needed
@@ -170,7 +186,9 @@ def main():
         metric_tracker=metric_tracker
     )
     
+    # Train model
     train_losses, val_losses = trainer.train()
+    
     if config.distributed.distributed_backend != "none":
         cleanup_distributed()
     
@@ -179,5 +197,4 @@ def main():
 
 if __name__ == "__main__":
     main() 
-    # python main.py --train_data data/train.csv --val_data data/val.csv
-    # torchrun --nproc_per_node=4 main.py --distributed_backend ddp --train_data data/train.csv --val_data data/val.csv
+    # Example usage: python main.py --config_file config.yaml
