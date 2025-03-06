@@ -109,6 +109,7 @@ class Trainer:
             "best_metrics": self.metric_tracker.best_metrics,
         }
         
+        
         # Save best checkpoint
         if is_best:
             best_path = self.save_dir / "best_model.pt"
@@ -128,7 +129,7 @@ class Trainer:
         self.optimizer.zero_grad()
         
         # use tqdm to iterate over the train_dataloader
-        for batch_idx, batch in tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader), desc="Training"):
+        for batch_idx, batch in tqdm(enumerate(self.train_dataloader), total=len(self.train_dataloader), desc=f"Epoch {epoch+1}/{self.epochs}"):
             # Move batch to device
             batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             labels = batch.pop("labels")
@@ -178,11 +179,13 @@ class Trainer:
             total_loss += loss.item() * self.grad_accum_steps * batch_size  # Denormalize loss
             total_samples += batch_size
             
-            # Log step metrics
+            # Log step metrics only at specified intervals
             if self.is_main_process and batch_idx % self.log_interval == 0:
                 step_loss = loss.item() * self.grad_accum_steps  # Denormalize loss
                 self.metric_tracker.update_train_metrics(step_loss, step=True)
-                print(f"Epoch {epoch} | Batch {batch_idx}/{len(self.train_dataloader)} | Loss: {step_loss:.4f}")
+                # Keep the terminal output minimal
+                if batch_idx % (self.log_interval * 10) == 0:  # Show less frequent terminal output
+                    print(f"Batch {batch_idx}/{len(self.train_dataloader)} | Loss: {step_loss:.4f}")
         
         # Calculate average loss
         avg_loss = total_loss / total_samples
@@ -202,7 +205,7 @@ class Trainer:
         all_labels = []
         
         with torch.no_grad():
-            for batch in tqdm(self.val_dataloader, total=len(self.val_dataloader), desc="Validation"):
+            for batch in tqdm(self.val_dataloader, desc="Validating"):
                 # Move batch to device
                 batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
                 labels = batch.pop("labels")
@@ -234,15 +237,18 @@ class Trainer:
     
     def train(self) -> Tuple[List[float], List[float]]:
         """Train the model for the specified number of epochs"""
-        # Log model architecture and hyperparameters
+        # Log model architecture and hyperparameters ONCE at the beginning of training
         if self.is_main_process:
+            print("Logging model architecture and hyperparameters...")
             self.metric_tracker.log_model_architecture(self.model)
             self.metric_tracker.log_hyperparameters(self.config)
+            print("Model architecture and hyperparameters logged successfully")
         
         best_val_loss = float("inf")
         patience_counter = 0
         
-        for epoch in tqdm(range(self.epochs), total=self.epochs, desc="Training"):
+        print(f"Starting training for {self.epochs} epochs")
+        for epoch in range(self.epochs):
             # Train for one epoch
             train_loss = self._train_epoch(epoch)
             
@@ -275,8 +281,10 @@ class Trainer:
                         print("Early stopping triggered.")
                     break
             
+            # Save regular checkpoint
             self._save_checkpoint(epoch)
         
+        # Save final model
         final_path = self.save_dir / "final_model.pt"
         if self.is_main_process:
             torch.save(
