@@ -11,6 +11,8 @@ from torch.cuda.amp import GradScaler, autocast
 from typing import Dict, List, Tuple, Optional, Union, Any, Callable
 from pathlib import Path
 
+from tqdm import tqdm
+
 from utils import MetricTracker
 
 
