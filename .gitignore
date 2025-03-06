@@ -1,0 +1,19 @@
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Ignore virtual environment directories
+venv/
+env/
+ENV/
+.venv/
+
+# Ignore Hugging Face token
+.huggingface/
+
+# Ignore PyTorch checkpoint files
