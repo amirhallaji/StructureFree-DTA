@@ -1,5 +1,62 @@
-# Ignore Jupyter Notebook checkpoints
-.ipynb_checkpoints/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+ipynb_checkpoints
+*.ipynb_checkpoints*
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Logs and databases
+*.log
+*.sqlite
+logs/
+checkpoints/
+
+# Model files
+*.pt
+*.pth
+*.ckpt
+*.bin
+
+# Data files
+*.csv
+*.tsv
+*.json
+*.pkl
+*.h5
+*.hdf5
+data/
+
+# Temporary files
+tmp/
+temp/
 
 # Ignore Python cache files
 __pycache__/

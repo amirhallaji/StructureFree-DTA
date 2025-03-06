@@ -16,10 +16,10 @@ class DataConfig:
     train_data_path: str = "data/train.csv"
     val_data_path: str = "data/val.csv"
     test_data_path: Optional[str] = None
-    batch_size: int = 4
-    num_workers: int = 4
-    max_molecule_length: int = 64
-    max_protein_length: int = 512
+    batch_size: int = 2
+    num_workers: int = 1
+    max_molecule_length: int = 32
+    max_protein_length: int = 128
 
 
 @dataclass
@@ -42,7 +42,7 @@ class LoggingConfig:
     log_dir: str = "logs"
     save_dir: str = "checkpoints"
     experiment_name: str = "drug_target_interaction"
-    log_interval: int = 1
+    log_interval: int = 10
 
 
 @dataclass
@@ -67,3 +67,4 @@ class Config:
         if self.device == "cuda" and not torch.cuda.is_available():
             print("CUDA not available, using CPU instead")
             self.device = "cpu" 
+

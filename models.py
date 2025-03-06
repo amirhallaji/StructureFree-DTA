@@ -67,16 +67,23 @@ class AffinityPredictor(nn.Module):
         self.protein_dim = self.protein_model.config.hidden_size
         self.molecule_dim = self.molecule_model.config.hidden_size
         
+        # Define kernel sizes for inception blocks
+        self.kernel_sizes = [3, 5]  # Default kernel sizes
+        
         # Inception blocks for feature extraction
         self.protein_inception = ResidualInceptionBlock(
-            self.protein_dim, inception_out_channels, dropout=dropout
+            self.protein_dim, inception_out_channels, kernel_sizes=self.kernel_sizes, dropout=dropout
         )
         self.molecule_inception = ResidualInceptionBlock(
-            self.molecule_dim, inception_out_channels, dropout=dropout
+            self.molecule_dim, inception_out_channels, kernel_sizes=self.kernel_sizes, dropout=dropout
         )
         
         # Calculate input size for the prediction head
-        inception_output_size = inception_out_channels * 2 * 2  # 2 branches, 2 modalities
+        # Each inception block has len(kernel_sizes) branches, each producing out_channels features
+        # For each modality (protein/molecule), we concatenate max and avg pooling results
+        # So the total is: num_branches * out_channels * 2 (pooling types) * 2 (modalities)
+        inception_output_size = len(self.kernel_sizes) * inception_out_channels * 2 * 2
+        
         
         # Prediction head
         layers = []
@@ -127,21 +134,26 @@ class AffinityPredictor(nn.Module):
         molecule_features = self.molecule_inception(molecule_embeddings)
         protein_features = self.protein_inception(protein_embeddings)
         
+        # Debug output shapes
+        batch_size = molecule_features.size(0)
+        
         # Global pooling
-        molecule_features = torch.cat([
-            F.adaptive_max_pool1d(molecule_features, 1).squeeze(-1),
-            F.adaptive_avg_pool1d(molecule_features, 1).squeeze(-1)
-        ], dim=1)
+        molecule_features_max = F.adaptive_max_pool1d(molecule_features, 1).squeeze(-1)
+        molecule_features_avg = F.adaptive_avg_pool1d(molecule_features, 1).squeeze(-1)
+        protein_features_max = F.adaptive_max_pool1d(protein_features, 1).squeeze(-1)
+        protein_features_avg = F.adaptive_avg_pool1d(protein_features, 1).squeeze(-1)
         
-        protein_features = torch.cat([
-            F.adaptive_max_pool1d(protein_features, 1).squeeze(-1),
-            F.adaptive_avg_pool1d(protein_features, 1).squeeze(-1)
-        ], dim=1)
+
         
-        # Concatenate features
+        # Concatenate pooled features for each modality
+        molecule_features = torch.cat([molecule_features_max, molecule_features_avg], dim=1)
+        protein_features = torch.cat([protein_features_max, protein_features_avg], dim=1)
+        
+
+        
         combined_features = torch.cat([molecule_features, protein_features], dim=1)
+    
         
-        # Predict affinity
         affinity = self.prediction_head(combined_features)
         
         return affinity.squeeze(-1)

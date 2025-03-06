@@ -58,6 +58,24 @@ def collate_fn(batch, molecule_tokenizer, protein_tokenizer, max_molecule_length
     return batch_dict
 
 
+# This class will store references to tokenizers and create a picklable collate function
+class CollateManager:
+    def __init__(self, molecule_tokenizer, protein_tokenizer, max_molecule_length, max_protein_length):
+        self.molecule_tokenizer = molecule_tokenizer
+        self.protein_tokenizer = protein_tokenizer
+        self.max_molecule_length = max_molecule_length
+        self.max_protein_length = max_protein_length
+    
+    def __call__(self, batch):
+        return collate_fn(
+            batch,
+            self.molecule_tokenizer,
+            self.protein_tokenizer,
+            self.max_molecule_length,
+            self.max_protein_length
+        )
+
+
 class DrugTargetDataModule:
     def __init__(
         self,
@@ -85,6 +103,14 @@ class DrugTargetDataModule:
         self.molecule_tokenizer = AutoTokenizer.from_pretrained(molecule_model_name)
         self.protein_tokenizer = AutoTokenizer.from_pretrained(protein_model_name)
         
+        # Create collate manager (this is picklable)
+        self.collate_manager = CollateManager(
+            self.molecule_tokenizer,
+            self.protein_tokenizer,
+            self.max_molecule_length,
+            self.max_protein_length
+        )
+        
         # Initialize datasets
         self.train_dataset = None
         self.val_dataset = None
@@ -98,9 +124,9 @@ class DrugTargetDataModule:
         df = pd.read_csv(file_path)
         
         # Assuming the CSV has columns: molecule_smiles, protein_sequence, binding_affinity
-        molecules = df["molecule_smiles"].tolist()
-        proteins = df["protein_sequence"].tolist()
-        labels = df["binding_affinity"].astype(float).tolist()
+        molecules = df["Molecule Sequence"].tolist()
+        proteins = df["Protein Sequence"].tolist()
+        labels = df["Binding Affinity"].astype(float).tolist()
         
         return molecules, proteins, labels
     
@@ -119,16 +145,6 @@ class DrugTargetDataModule:
             test_molecules, test_proteins, test_labels = self._load_data(self.test_data_path)
             self.test_dataset = DrugTargetDataset(test_molecules, test_proteins, test_labels)
     
-    def get_collate_fn(self):
-        """Return the collate function with tokenizers"""
-        return lambda batch: collate_fn(
-            batch,
-            self.molecule_tokenizer,
-            self.protein_tokenizer,
-            self.max_molecule_length,
-            self.max_protein_length
-        )
-    
     def train_dataloader(self) -> DataLoader:
         """Return the training dataloader"""
         return DataLoader(
@@ -136,7 +152,7 @@ class DrugTargetDataModule:
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
-            collate_fn=self.get_collate_fn(),
+            collate_fn=self.collate_manager,
             pin_memory=True
         )
     
@@ -147,7 +163,7 @@ class DrugTargetDataModule:
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            collate_fn=self.get_collate_fn(),
+            collate_fn=self.collate_manager,
             pin_memory=True
         )
     
@@ -159,7 +175,7 @@ class DrugTargetDataModule:
                 batch_size=self.batch_size,
                 shuffle=False,
                 num_workers=self.num_workers,
-                collate_fn=self.get_collate_fn(),
+                collate_fn=self.collate_manager,
                 pin_memory=True
             )
-        return None 
+        return None

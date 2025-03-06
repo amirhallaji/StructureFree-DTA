@@ -70,7 +70,6 @@ class Trainer:
         
         # Logging parameters
         self.log_interval = config.logging.log_interval
-        self.save_interval = config.logging.save_interval
         self.save_dir = Path(config.logging.save_dir)
         
         # Create save directory if it doesn't exist

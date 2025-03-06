@@ -86,17 +86,16 @@ def update_config_from_args(config, args):
 
 
 def main():
+    # add a little code to avoid fragmentation in gpu with os 
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
     # Parse arguments
     args = parse_args()
-    
-    # Create config
     config = Config()
     config = update_config_from_args(config, args)
-    
-    # Set random seed
     set_seed(config.seed)
-    
-    # Get device
+
     device = get_device(config.device)
     
     # Initialize distributed training if needed
@@ -131,14 +130,11 @@ def main():
         dropout=config.model.dropout
     )
     
-    # Print model parameters
     num_params = count_model_parameters(model)
     print(f"Model has {num_params:,} trainable parameters")
     
-    # Create loss function
     loss_fn = DrugTargetInteractionLoss(alpha=config.training.loss_alpha)
     
-    # Create optimizer
     optimizer = optim.AdamW(
         model.parameters(),
         lr=config.training.learning_rate,
@@ -174,10 +170,7 @@ def main():
         metric_tracker=metric_tracker
     )
     
-    # Train model
     train_losses, val_losses = trainer.train()
-    
-    # Cleanup distributed training if needed
     if config.distributed.distributed_backend != "none":
         cleanup_distributed()
     
@@ -186,3 +179,5 @@ def main():
 
 if __name__ == "__main__":
     main() 
+    # python main.py --train_data data/train.csv --val_data data/val.csv
+    # torchrun --nproc_per_node=4 main.py --distributed_backend ddp --train_data data/train.csv --val_data data/val.csv
