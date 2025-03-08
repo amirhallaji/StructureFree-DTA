@@ -3,197 +3,125 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer
 
-
-class Swish(nn.Module):
+class Swish(torch.nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x)
 
-
-class Mish(nn.Module):
+class Mish(torch.nn.Module):
     def forward(self, x):
-        return x * torch.tanh(F.softplus(x))
-
+        return x * torch.tanh(torch.nn.functional.softplus(x))
 
 class ResidualInceptionBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_sizes=[3, 5], dropout=0.05):
         super(ResidualInceptionBlock, self).__init__()
-        self.conv_branches = nn.ModuleList()
-        
-        for kernel_size in kernel_sizes:
-            padding = kernel_size // 2
-            branch = nn.Sequential(
-                nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size, padding=padding),
-                nn.BatchNorm1d(out_channels),
-                Mish(),
-                nn.Dropout(dropout),
-                nn.Conv1d(out_channels, out_channels, kernel_size=kernel_size, padding=padding),
-                nn.BatchNorm1d(out_channels),
-                Mish(),
-                nn.Dropout(dropout)
-            )
-            self.conv_branches.append(branch)
-        
-        # Residual connection if dimensions don't match
-        self.residual = nn.Sequential(
-            nn.Conv1d(in_channels, out_channels * len(kernel_sizes), kernel_size=1),
-            nn.BatchNorm1d(out_channels * len(kernel_sizes))
-        ) if in_channels != out_channels * len(kernel_sizes) else nn.Identity()
-    
-    def forward(self, x):
-        branch_outputs = []
-        for branch in self.conv_branches:
-            branch_outputs.append(branch(x))
-        
-        branch_output = torch.cat(branch_outputs, dim=1)
-        residual_x = self.residual(x)
-        
-        return F.relu(branch_output + residual_x)
 
+        self.out_channels = out_channels
+        num_branches = len(kernel_sizes)
+        branch_out_channels = out_channels // num_branches
+
+        self.branches = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv1d(in_channels, in_channels, kernel_size=1),
+                nn.BatchNorm1d(in_channels),
+                nn.ReLU(),
+                nn.Conv1d(in_channels, branch_out_channels, kernel_size=k, padding=k // 2),
+                nn.BatchNorm1d(branch_out_channels),
+                nn.ReLU(),
+                nn.Dropout(dropout)
+            ) for k in kernel_sizes
+        ])
+
+        self.residual_adjust = nn.Conv1d(in_channels, out_channels, kernel_size=1) if in_channels != out_channels else nn.Identity()
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        branch_outputs = [branch(x) for branch in self.branches]
+        concatenated = torch.cat(branch_outputs, dim=1)
+        residual = self.residual_adjust(x)
+        output = self.relu(concatenated + residual)
+        return output
 
 class AffinityPredictor(nn.Module):
     def __init__(self, 
                  protein_model_name="facebook/esm2_t6_8M_UR50D", 
                  molecule_model_name="DeepChem/ChemBERTa-77M-MLM",
-                 hidden_sizes=[1024, 768, 512, 256, 1], 
+                 hidden_sizes=[1024,768,512,256,1], 
                  inception_out_channels=256,
                  dropout=0.05):
         super(AffinityPredictor, self).__init__()
-        
-        # Load pre-trained models
+
         self.protein_model = AutoModel.from_pretrained(protein_model_name)
         self.molecule_model = AutoModel.from_pretrained(molecule_model_name)
-        
-        # Get embedding dimensions
-        self.protein_dim = self.protein_model.config.hidden_size
-        self.molecule_dim = self.molecule_model.config.hidden_size
-        
-        # Define kernel sizes for inception blocks
-        self.kernel_sizes = [3, 5]  # Default kernel sizes
-        
-        # Inception blocks for feature extraction
-        self.protein_inception = ResidualInceptionBlock(
-            self.protein_dim, inception_out_channels, kernel_sizes=self.kernel_sizes, dropout=dropout
-        )
-        self.molecule_inception = ResidualInceptionBlock(
-            self.molecule_dim, inception_out_channels, kernel_sizes=self.kernel_sizes, dropout=dropout
-        )
-        
-        # Calculate input size for the prediction head
-        # Each inception block has len(kernel_sizes) branches, each producing out_channels features
-        # For each modality (protein/molecule), we concatenate max and avg pooling results
-        # So the total is: num_branches * out_channels * 2 (pooling types) * 2 (modalities)
-        inception_output_size = len(self.kernel_sizes) * inception_out_channels * 2 * 2
-        
-        
-        # Prediction head
+
+        self.protein_model.config.gradient_checkpointing = True
+        self.protein_model.gradient_checkpointing_enable()
+
+        self.molecule_model.config.gradient_checkpointing = True
+        self.molecule_model.gradient_checkpointing_enable()
+
+        prot_embedding_dim = self.protein_model.config.hidden_size
+        mol_embedding_dim = self.molecule_model.config.hidden_size
+        combined_dim = prot_embedding_dim + mol_embedding_dim
+
+        self.inc1 = ResidualInceptionBlock(combined_dim, combined_dim, dropout=dropout)
+        self.inc2 = ResidualInceptionBlock(combined_dim, combined_dim, dropout=dropout)
+
         layers = []
-        input_size = inception_output_size
-        
-        for i, output_size in enumerate(hidden_sizes):
-            if i == len(hidden_sizes) - 1:  # Last layer
-                layers.append(nn.Linear(input_size, output_size))
-            else:
-                layers.extend([
-                    nn.Linear(input_size, output_size),
-                    nn.BatchNorm1d(output_size),
-                    Mish(),
-                    nn.Dropout(dropout)
-                ])
-                input_size = output_size
-        
-        self.prediction_head = nn.Sequential(*layers)
-    
+        input_dim = combined_dim  # After Inception block
+        for output_dim in hidden_sizes:
+            layers.append(nn.Linear(input_dim, output_dim))
+            if output_dim != 1:
+                layers.append(Mish())
+            input_dim = output_dim
+        self.regressor = nn.Sequential(*layers)
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, batch):
-        # Unpack batch
-        molecule_input_ids = batch["molecule_input_ids"]
-        molecule_attention_mask = batch["molecule_attention_mask"]
-        protein_input_ids = batch["protein_input_ids"]
-        protein_attention_mask = batch["protein_attention_mask"]
-        
-        # Get embeddings from pre-trained models
-        molecule_outputs = self.molecule_model(
-            input_ids=molecule_input_ids,
-            attention_mask=molecule_attention_mask,
-            return_dict=True
-        )
-        protein_outputs = self.protein_model(
-            input_ids=protein_input_ids,
-            attention_mask=protein_attention_mask,
-            return_dict=True
-        )
-        
-        # Extract sequence representations
-        molecule_embeddings = molecule_outputs.last_hidden_state  # [batch_size, seq_len, hidden_size]
-        protein_embeddings = protein_outputs.last_hidden_state    # [batch_size, seq_len, hidden_size]
-        
-        # Transpose for Conv1D: [batch_size, hidden_size, seq_len]
-        molecule_embeddings = molecule_embeddings.transpose(1, 2)
-        protein_embeddings = protein_embeddings.transpose(1, 2)
-        
-        # Apply inception blocks
-        molecule_features = self.molecule_inception(molecule_embeddings)
-        protein_features = self.protein_inception(protein_embeddings)
-        
-        # Debug output shapes
-        batch_size = molecule_features.size(0)
-        
-        # Global pooling
-        molecule_features_max = F.adaptive_max_pool1d(molecule_features, 1).squeeze(-1)
-        molecule_features_avg = F.adaptive_avg_pool1d(molecule_features, 1).squeeze(-1)
-        protein_features_max = F.adaptive_max_pool1d(protein_features, 1).squeeze(-1)
-        protein_features_avg = F.adaptive_avg_pool1d(protein_features, 1).squeeze(-1)
-        
+        protein_input = {
+            "input_ids": batch["protein_input_ids"],
+            "attention_mask": batch["protein_attention_mask"]
+        }
+        molecule_input = {
+            "input_ids": batch["molecule_input_ids"],
+            "attention_mask": batch["molecule_attention_mask"]
+        }
+        protein_embedding = self.protein_model(**protein_input).last_hidden_state.mean(dim=1)  # (batch_size, hidden_dim)
+        molecule_embedding = self.molecule_model(**molecule_input).last_hidden_state.mean(dim=1)  # (batch_size, hidden_dim)
+        combined_features = torch.cat((protein_embedding, molecule_embedding), dim=1).unsqueeze(2)  # (batch_size, combined_dim, 1)
+        combined_features = self.inc1(combined_features)  # (batch_size, combined_dim)
+        combined_features = self.inc2(combined_features)
+        combined_features = combined_features.squeeze(2)
+        output = self.regressor(self.dropout(combined_features))  # (batch_size, 1)
+        return output
 
-        
-        # Concatenate pooled features for each modality
-        molecule_features = torch.cat([molecule_features_max, molecule_features_avg], dim=1)
-        protein_features = torch.cat([protein_features_max, protein_features_avg], dim=1)
-        
-
-        
-        combined_features = torch.cat([molecule_features, protein_features], dim=1)
-    
-        
-        affinity = self.prediction_head(combined_features)
-        
-        return affinity.squeeze(-1)
-
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 class DrugTargetInteractionLoss(nn.Module):
     def __init__(self, alpha=0.5, reduction='mean'):
         super(DrugTargetInteractionLoss, self).__init__()
-        self.alpha = alpha
+        self.alpha = alpha  # Weighting factor between cosine similarity loss and MSE loss
         self.reduction = reduction
-        self.mse = nn.MSELoss(reduction=reduction)
-    
-    def forward(self, pred, interaction_score):
-        # MSE Loss
-        mse_loss = self.mse(pred, interaction_score)
+        self.mse_loss = nn.MSELoss(reduction="sum")
+
+    def forward(self, pred , interaction_score):
+        """
+        Computes the combined loss for drug-target interaction.
+        :param drug_emb: Tensor of shape (batch_size, feature_dim)
+        :param target_emb: Tensor of shape (batch_size, feature_dim)
+        :param interaction_score: Tensor of shape (batch_size,) with interaction scores (continuous values)
+        """
+        cosine_sim = F.cosine_similarity(pred, interaction_score, dim=-1)
+        cosine_loss = 1 - cosine_sim  # Encourage similarity between interacting pairs
         
-        # Ranking Loss (Pairwise)
-        batch_size = pred.size(0)
-        if batch_size <= 1:
-            return mse_loss
+        mse_loss = self.mse_loss(pred, interaction_score)
+        total_loss = self.alpha * cosine_loss + (1 - self.alpha) * mse_loss
         
-        # Create all possible pairs
-        pred_i = pred.unsqueeze(1).repeat(1, batch_size)
-        pred_j = pred.unsqueeze(0).repeat(batch_size, 1)
-        
-        target_i = interaction_score.unsqueeze(1).repeat(1, batch_size)
-        target_j = interaction_score.unsqueeze(0).repeat(batch_size, 1)
-        
-        # Calculate ranking loss only for pairs with different targets
-        mask = (target_i != target_j).float()
-        
-        # Concordance loss: if target_i > target_j then pred_i should be > pred_j
-        concordance = torch.sign(target_i - target_j) * torch.sign(pred_i - pred_j)
-        concordance = (1.0 - concordance) / 2.0  # Convert to loss (0 if concordant, 1 if discordant)
-        
-        ranking_loss = (concordance * mask).sum() / (mask.sum() + 1e-8)
-        
-        # Combine losses
-        total_loss = self.alpha * mse_loss + (1 - self.alpha) * ranking_loss
-        
+        if self.reduction == 'mean':
+            return total_loss.mean()
+        elif self.reduction == 'sum':
+            return total_loss.sum()
         return total_loss
 
 

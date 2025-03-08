@@ -4,9 +4,12 @@ import pandas as pd
 import numpy as np
 from transformers import AutoTokenizer
 from typing import Dict, List, Tuple, Optional, Union
+import pytorch_lightning as pl
 
 
 class DrugTargetDataset(Dataset):
+    """Dataset for drug-target interaction prediction"""
+    
     def __init__(self, molecules, proteins, labels):
         self.molecules = molecules
         self.proteins = proteins
@@ -24,16 +27,18 @@ class DrugTargetDataset(Dataset):
 
 
 def collate_fn(batch, molecule_tokenizer, protein_tokenizer, max_molecule_length=128, max_protein_length=1024):
+    """Collate function for batching samples"""
     molecules = [item["molecule"] for item in batch]
     proteins = [item["protein"] for item in batch]
     labels = [item["label"] for item in batch]
-    
+    batch_max_molecule_length = min(max(len(m) for m in molecules), max_molecule_length)
+    batch_max_protein_length = min(max(len(p) for p in proteins), max_protein_length)
     # Tokenize molecules
     molecule_encodings = molecule_tokenizer(
         molecules,
         padding="max_length",
         truncation=True,
-        max_length=max_molecule_length,
+        max_length=batch_max_molecule_length,
         return_tensors="pt"
     )
     
@@ -42,7 +47,7 @@ def collate_fn(batch, molecule_tokenizer, protein_tokenizer, max_molecule_length
         proteins,
         padding="max_length",
         truncation=True,
-        max_length=max_protein_length,
+        max_length=batch_max_protein_length,
         return_tensors="pt"
     )
     
@@ -58,8 +63,9 @@ def collate_fn(batch, molecule_tokenizer, protein_tokenizer, max_molecule_length
     return batch_dict
 
 
-# This class will store references to tokenizers and create a picklable collate function
 class CollateManager:
+    """Class to handle collation with tokenizers"""
+    
     def __init__(self, molecule_tokenizer, protein_tokenizer, max_molecule_length, max_protein_length):
         self.molecule_tokenizer = molecule_tokenizer
         self.protein_tokenizer = protein_tokenizer
@@ -76,7 +82,9 @@ class CollateManager:
         )
 
 
-class DrugTargetDataModule:
+class DrugTargetDataModule(pl.LightningDataModule):
+    """PyTorch Lightning data module for drug-target interaction prediction"""
+    
     def __init__(
         self,
         train_data_path: str,
@@ -89,6 +97,9 @@ class DrugTargetDataModule:
         max_molecule_length: int = 128,
         max_protein_length: int = 1024,
     ):
+        super().__init__()
+        self.save_hyperparameters()
+        
         self.train_data_path = train_data_path
         self.val_data_path = val_data_path
         self.test_data_path = test_data_path
@@ -99,11 +110,18 @@ class DrugTargetDataModule:
         self.max_molecule_length = max_molecule_length
         self.max_protein_length = max_protein_length
         
+        # Initialize datasets
+        self.train_dataset = None
+        self.val_dataset = None
+        self.test_dataset = None
+    
+    def setup(self, stage: Optional[str] = None):
+        """Set up datasets for training, validation, and testing"""
         # Load tokenizers
-        self.molecule_tokenizer = AutoTokenizer.from_pretrained(molecule_model_name)
-        self.protein_tokenizer = AutoTokenizer.from_pretrained(protein_model_name)
+        self.molecule_tokenizer = AutoTokenizer.from_pretrained(self.molecule_model_name)
+        self.protein_tokenizer = AutoTokenizer.from_pretrained(self.protein_model_name)
         
-        # Create collate manager (this is picklable)
+        # Create collate manager
         self.collate_manager = CollateManager(
             self.molecule_tokenizer,
             self.protein_tokenizer,
@@ -111,13 +129,21 @@ class DrugTargetDataModule:
             self.max_protein_length
         )
         
-        # Initialize datasets
-        self.train_dataset = None
-        self.val_dataset = None
-        self.test_dataset = None
+        # Set up datasets based on stage
+        if stage == "fit" or stage is None:
+            # Load training data
+            train_molecules, train_proteins, train_labels = self._load_data(self.train_data_path)
+            self.train_dataset = DrugTargetDataset(train_molecules, train_proteins, train_labels)
+            
+            # Load validation data
+            val_molecules, val_proteins, val_labels = self._load_data(self.val_data_path)
+            self.val_dataset = DrugTargetDataset(val_molecules, val_proteins, val_labels)
         
-        # Load data
-        self._setup()
+        if stage == "test" or stage is None:
+            # Load test data if available
+            if self.test_data_path:
+                test_molecules, test_proteins, test_labels = self._load_data(self.test_data_path)
+                self.test_dataset = DrugTargetDataset(test_molecules, test_proteins, test_labels)
     
     def _load_data(self, file_path: str) -> Tuple[List[str], List[str], List[float]]:
         """Load data from CSV file"""
@@ -129,21 +155,6 @@ class DrugTargetDataModule:
         labels = df["Binding Affinity"].astype(float).tolist()
         
         return molecules, proteins, labels
-    
-    def _setup(self):
-        """Setup datasets"""
-        # Load training data
-        train_molecules, train_proteins, train_labels = self._load_data(self.train_data_path)
-        self.train_dataset = DrugTargetDataset(train_molecules, train_proteins, train_labels)
-        
-        # Load validation data
-        val_molecules, val_proteins, val_labels = self._load_data(self.val_data_path)
-        self.val_dataset = DrugTargetDataset(val_molecules, val_proteins, val_labels)
-        
-        # Load test data if available
-        if self.test_data_path:
-            test_molecules, test_proteins, test_labels = self._load_data(self.test_data_path)
-            self.test_dataset = DrugTargetDataset(test_molecules, test_proteins, test_labels)
     
     def train_dataloader(self) -> DataLoader:
         """Return the training dataloader"""

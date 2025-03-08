@@ -3,15 +3,14 @@ import sys
 import argparse
 import yaml
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from config import Config
-from models import AffinityPredictor, DrugTargetInteractionLoss, count_model_parameters
-from dataloader import DrugTargetDataModule
+from models import AffinityPredictor
 from trainer import Trainer
-from utils import MetricTracker, set_seed, get_device, setup_distributed, cleanup_distributed
+from dataloader import DrugTargetDataModule
 
 
 def parse_args():
@@ -29,22 +28,18 @@ def load_yaml_config(config_file):
 
 
 def update_config_from_yaml(config, yaml_config):
-    """Update config from YAML configuration with simpler approach"""
-    # Get config sections, using empty dict if section is missing
+    """Update config from YAML configuration"""
     model_config = yaml_config.get('model', {})
     data_config = yaml_config.get('data', {})
     training_config = yaml_config.get('training', {})
     logging_config = yaml_config.get('logging', {})
-    distributed_config = yaml_config.get('distributed', {})
     
-    # Update model config
     config.model.protein_model_name = model_config.get('protein_model_name', config.model.protein_model_name)
     config.model.molecule_model_name = model_config.get('molecule_model_name', config.model.molecule_model_name)
     config.model.hidden_sizes = model_config.get('hidden_sizes', config.model.hidden_sizes)
     config.model.inception_out_channels = model_config.get('inception_out_channels', config.model.inception_out_channels)
     config.model.dropout = model_config.get('dropout', config.model.dropout)
     
-    # Update data config
     config.data.train_data_path = data_config.get('train_data_path', config.data.train_data_path)
     config.data.val_data_path = data_config.get('val_data_path', config.data.val_data_path)
     config.data.test_data_path = data_config.get('test_data_path', config.data.test_data_path)
@@ -53,74 +48,53 @@ def update_config_from_yaml(config, yaml_config):
     config.data.max_molecule_length = data_config.get('max_molecule_length', config.data.max_molecule_length)
     config.data.max_protein_length = data_config.get('max_protein_length', config.data.max_protein_length)
     
-    # Update training config
-    config.training.epochs = training_config.get('epochs', config.training.epochs)
+    config.training.max_epochs = training_config.get('max_epochs', config.training.max_epochs)
     config.training.learning_rate = training_config.get('learning_rate', config.training.learning_rate)
     config.training.weight_decay = training_config.get('weight_decay', config.training.weight_decay)
-    config.training.scheduler_factor = training_config.get('scheduler_factor', config.training.scheduler_factor)
-    config.training.scheduler_patience = training_config.get('scheduler_patience', config.training.scheduler_patience)
-    config.training.scheduler_min_lr = training_config.get('scheduler_min_lr', config.training.scheduler_min_lr)
     config.training.loss_alpha = training_config.get('loss_alpha', config.training.loss_alpha)
-    config.training.gradient_accumulation_steps = training_config.get('gradient_accumulation_steps', config.training.gradient_accumulation_steps)
+    config.training.gradient_clip_val = training_config.get('gradient_clip_val', config.training.gradient_clip_val)
+    config.training.accumulate_grad_batches = training_config.get('accumulate_grad_batches', config.training.accumulate_grad_batches)
+    config.training.precision = training_config.get('precision', config.training.precision)
     config.training.early_stopping_patience = training_config.get('early_stopping_patience', config.training.early_stopping_patience)
-    config.training.mixed_precision = training_config.get('mixed_precision', config.training.mixed_precision)
-    config.training.clip_grad_norm = training_config.get('clip_grad_norm', config.training.clip_grad_norm)
+    config.training.early_stopping_monitor = training_config.get('early_stopping_monitor', config.training.early_stopping_monitor)
+    config.training.early_stopping_mode = training_config.get('early_stopping_mode', config.training.early_stopping_mode)
+    config.training.lr_scheduler_factor = training_config.get('lr_scheduler_factor', config.training.lr_scheduler_factor)
+    config.training.lr_scheduler_patience = training_config.get('lr_scheduler_patience', config.training.lr_scheduler_patience)
+    config.training.lr_scheduler_min_lr = training_config.get('lr_scheduler_min_lr', config.training.lr_scheduler_min_lr)
     
-    # Update logging config
     config.logging.log_dir = logging_config.get('log_dir', config.logging.log_dir)
     config.logging.save_dir = logging_config.get('save_dir', config.logging.save_dir)
     config.logging.experiment_name = logging_config.get('experiment_name', config.logging.experiment_name)
-    config.logging.log_interval = logging_config.get('log_interval', config.logging.log_interval)
+    config.logging.log_every_n_steps = logging_config.get('log_every_n_steps', config.logging.log_every_n_steps)
     
-    # Update distributed config
-    config.distributed.distributed_backend = distributed_config.get('distributed_backend', config.distributed.distributed_backend)
-    config.distributed.find_unused_parameters = distributed_config.get('find_unused_parameters', config.distributed.find_unused_parameters)
-    config.distributed.fsdp_config = distributed_config.get('fsdp_config', config.distributed.fsdp_config)
-    
-    # Update other config
     config.seed = yaml_config.get('seed', config.seed)
-    config.device = yaml_config.get('device', config.device)
+    config.accelerator = yaml_config.get('accelerator', config.accelerator)
+    config.devices = yaml_config.get('devices', config.devices)
+    config.strategy = yaml_config.get('strategy', config.strategy)
     
     return config
 
 
 def main():
-    # Add environment variables to avoid GPU memory fragmentation 
+    """Main function to run the training pipeline"""
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     
-    # Parse arguments
     args = parse_args()
-    
-    # Load YAML configuration
     yaml_config = load_yaml_config(args.config_file)
-    
-    # Create default config and update with YAML config
     config = Config()
     config = update_config_from_yaml(config, yaml_config)
     
-    # Print configuration
-    print("Configuration:")
-    print(f"  Model: {config.model.protein_model_name}, {config.model.molecule_model_name}")
-    print(f"  Batch size: {config.data.batch_size}")
-    print(f"  Learning rate: {config.training.learning_rate}")
-    print(f"  Device: {config.device}")
-    print(f"  Backend: {config.distributed.distributed_backend}")
+    print(f"Model: {config.model.protein_model_name}, {config.model.molecule_model_name}")
+    print(f"Batch size: {config.data.batch_size}")
+    print(f"Learning rate: {config.training.learning_rate}")
+    print(f"Accelerator: {config.accelerator}")
+    print(f"Strategy: {config.strategy}")
+    print(f"Early stopping patience: {config.training.early_stopping_patience}")
     
-    # Set random seed
-    set_seed(config.seed)
+    pl.seed_everything(config.seed)
     
-    # Get device
-    device = get_device(config.device)
-    
-    # Initialize distributed training if needed
-    if config.distributed.distributed_backend != "none":
-        rank = int(os.environ.get("RANK", 0))
-        world_size = int(os.environ.get("WORLD_SIZE", 1))
-        setup_distributed(rank, world_size, "nccl" if device.type == "cuda" else "gloo")
-    
-    # Create data module
     data_module = DrugTargetDataModule(
         train_data_path=config.data.train_data_path,
         val_data_path=config.data.val_data_path,
@@ -133,11 +107,6 @@ def main():
         max_protein_length=config.data.max_protein_length
     )
     
-    # Create dataloaders
-    train_dataloader = data_module.train_dataloader()
-    val_dataloader = data_module.val_dataloader()
-    
-    # Create model
     model = AffinityPredictor(
         protein_model_name=config.model.protein_model_name,
         molecule_model_name=config.model.molecule_model_name,
@@ -146,55 +115,57 @@ def main():
         dropout=config.model.dropout
     )
     
-    num_params = count_model_parameters(model)
-    print(f"Model has {num_params:,} trainable parameters")
+    trainer_module = Trainer(model=model, config=config)
     
-    loss_fn = DrugTargetInteractionLoss(alpha=config.training.loss_alpha)
+    callbacks = [
+        # Save only the best model checkpoint
+        ModelCheckpoint(
+            dirpath=os.path.join(config.logging.save_dir, config.logging.experiment_name),
+            filename="best-{epoch:02d}-{val/loss:.4f}",
+            monitor=config.training.early_stopping_monitor,
+            mode=config.training.early_stopping_mode,
+            save_top_k=1,  # Only save the best model
+            save_last=False,  # Don't save the last model
+            verbose=True
+        ),
+        # Early stopping with configurable patience
+        EarlyStopping(
+            monitor=config.training.early_stopping_monitor,
+            mode=config.training.early_stopping_mode,
+            patience=config.training.early_stopping_patience,
+            verbose=True
+        ),
+        # Learning rate monitor
+        LearningRateMonitor(logging_interval="epoch")
+    ]
     
-    optimizer = optim.AdamW(
-        model.parameters(),
-        lr=config.training.learning_rate,
-        weight_decay=config.training.weight_decay
+    logger = TensorBoardLogger(
+        save_dir=config.logging.log_dir,
+        name=config.logging.experiment_name,
+        default_hp_metric=False
     )
     
-    # Create scheduler
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="min",
-        factor=config.training.scheduler_factor,
-        patience=config.training.scheduler_patience,
-        min_lr=config.training.scheduler_min_lr,
-        verbose=True
+    pl_trainer = pl.Trainer(
+        accelerator=config.accelerator,
+        devices=config.devices,
+        strategy=config.strategy,
+        max_epochs=config.training.max_epochs,
+        gradient_clip_val=config.training.gradient_clip_val,
+        accumulate_grad_batches=config.training.accumulate_grad_batches,
+        precision=config.training.precision,
+        callbacks=callbacks,
+        logger=logger,
+        log_every_n_steps=config.logging.log_every_n_steps,
     )
     
-    # Create metric tracker
-    metric_tracker = MetricTracker(
-        log_dir=config.logging.log_dir,
-        experiment_name=config.logging.experiment_name
-    )
+    pl_trainer.fit(trainer_module, data_module)
     
-    # Create trainer
-    trainer = Trainer(
-        model=model,
-        loss_fn=loss_fn,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        train_dataloader=train_dataloader,
-        val_dataloader=val_dataloader,
-        device=device,
-        config=config,
-        metric_tracker=metric_tracker
-    )
+    if data_module.test_dataloader() is not None:
+        pl_trainer.test(trainer_module, data_module)
     
-    # Train model
-    train_losses, val_losses = trainer.train()
-    
-    if config.distributed.distributed_backend != "none":
-        cleanup_distributed()
-    
-    return train_losses, val_losses
+    return model
 
 
 if __name__ == "__main__":
-    main() 
+    main()
     # Example usage: python main.py --config_file config.yaml
