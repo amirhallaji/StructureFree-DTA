@@ -12,7 +12,7 @@ class Mish(torch.nn.Module):
         return x * torch.tanh(torch.nn.functional.softplus(x))
 
 class ResidualInceptionBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_sizes=[3, 5], dropout=0.05):
+    def __init__(self, in_channels, out_channels, kernel_sizes=[1,3], dropout=0.05):
         super(ResidualInceptionBlock, self).__init__()
 
         self.out_channels = out_channels
@@ -47,7 +47,7 @@ class AffinityPredictor(nn.Module):
                  molecule_model_name="DeepChem/ChemBERTa-77M-MLM",
                  hidden_sizes=[1024,768,512,256,1], 
                  inception_out_channels=256,
-                 dropout=0.05):
+                 dropout=0.01):
         super(AffinityPredictor, self).__init__()
 
         self.protein_model = AutoModel.from_pretrained(protein_model_name)
@@ -123,8 +123,6 @@ class DrugTargetInteractionLoss(nn.Module):
         elif self.reduction == 'sum':
             return total_loss.sum()
         return total_loss
-
-
 def count_model_parameters(model):
     """Count the number of trainable parameters in a model"""
     return sum(p.numel() for p in model.parameters() if p.requires_grad) 

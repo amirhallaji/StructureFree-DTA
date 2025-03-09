@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gpu-kashf-dti-job2
+  namespace: kashf-train
+spec:
+  template:
+    spec:
+      nodeSelector:
+        team: "all"
+      runtimeClassName: nvidia
+      containers:
+      - name: gpu-check-train-job-container
+        image: docker.roshan-ai.ir/kashf-train/kashf_train_job:1.0.15 # should be unique for each image
+        imagePullPolicy: Always
+        volumeMounts:
+        - mountPath: /mnt/data/kashf-team
+          name: data-volume
+        resources:
+          limits:
+            memory: "32Gi"
+            cpu: "16"
+            nvidia.com/gpu: 1
+          requests:
+            memory: "32Gi"
+            cpu: "16"
+        env:
+        - name: CUDA_DISABLE_CONTROL
+          value: "true"
+      restartPolicy: Never
+      volumes:
+      - name: data-volume
+        hostPath:
+          path: /mnt/data/kashf-team
+  backoffLimit: 0

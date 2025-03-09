@@ -10,43 +10,41 @@ model:
 
 # Data Configuration
 data:
-  train_data_path: "data/train.csv"
-  val_data_path: "data/val.csv"
+  train_data_path: "data/kiba_train.csv"
+  val_data_path: "data/kiba_test.csv"
   test_data_path: null
-  batch_size: 8
-  num_workers: 4
-  max_molecule_length: 16
-  max_protein_length: 32
+  batch_size: 64
+  num_workers: 16
+  max_molecule_length: 128
+  max_protein_length: 1024
 
 # Training Configuration
 training:
-  max_epochs: 100
-  learning_rate: 1.0e-4
-  weight_decay: 1.0e-6
+  epochs: 150
+  learning_rate: 5.0e-5
+  weight_decay: 1.0e-5
+  scheduler_factor: 0.5
+  scheduler_patience: 5
+  scheduler_min_lr: 1.0e-7
   loss_alpha: 0.5
-  gradient_clip_val: 1.0
-  accumulate_grad_batches: 2
-  precision: "16-mixed"  # Options: "32", "16-mixed", "bf16-mixed"
-  
-  # Early stopping configuration
-  early_stopping_patience: 10  # Number of epochs with no improvement after which training will be stopped
-  early_stopping_monitor: "val_loss"  # Metric to monitor for early stopping
-  early_stopping_mode: "min"  # Mode for monitoring (min or max)
-  
-  # Learning rate scheduler
-  lr_scheduler_factor: 0.5
-  lr_scheduler_patience: 5
-  lr_scheduler_min_lr: 1.0e-7
+  gradient_accumulation_steps: 1
+  early_stopping_patience: 10
+  mixed_precision: true
+  clip_grad_norm: null
 
 # Logging Configuration
 logging:
-  log_dir: "logs"
-  save_dir: "checkpoints"
-  experiment_name: "drug_target_interaction"
-  log_every_n_steps: 50
+  log_dir: "/mnt/data/kashf-team/LLM-kashf/dti/logs"
+  save_dir: "/mnt/data/kashf-team/LLM-kashf/dti/checkpoints"
+  experiment_name: "ResidualInception-Conv1x1-base-Kiba"
+  log_interval: 50
+
+# Distributed Training Configuration
+distributed:
+  distributed_backend: "none"  # Options: none, ddp, fsdp
+  find_unused_parameters: false
+  fsdp_config: null
 
 # Other Configuration
 seed: 42
-accelerator: "auto"  # Options: "auto", "cpu", "gpu", "tpu", "mps"
-devices: "auto"      # Number of devices or "auto"
-strategy: "auto"     # Options: "auto", "ddp", "deepspeed", "fsdp" 
+device: "cuda" 
