@@ -134,3 +134,76 @@ The framework consists of:
 L_mse = ((y_pred - y_true) ** 2).mean()
 L_cos = 1 - cosine_similarity(y_pred, y_true)
 loss = 0.5 * L_cos + 0.5 * L_mse
+```
+
+
+## Results
+
+All results averaged over 5-fold CV, random split, seed=0.
+
+### Performance on Davis
+
+| Method         | MSE   | CI    |
+|----------------|-------|-------|
+| **Our Method** | 0.182 | 0.920 |
+| 3DProtDTA      | 0.184 | 0.917 |
+| MGraphDTA      | 0.207 | 0.900 |
+| BiFormerDTA    | 0.211 | 0.901 |
+| SSM-DTA        | 0.219 | 0.890 |
+| GraphDTA       | 0.229 | 0.893 |
+| MT-DTI         | 0.245 | 0.887 |
+| DeepCDA        | 0.248 | 0.891 |
+| DeepDTA        | 0.262 | 0.870 |
+
+**Best MSE and CI on Davis**  
+Residual Inception blocks are sample-efficient; full fine-tuning helps the most.
+
+---
+
+### Performance on KIBA
+
+| Method         | MSE   | CI    |
+|----------------|-------|-------|
+| MGraphDTA      | 0.128 | 0.902 |
+| **Our Method** | 0.135 | 0.902 |
+| 3DProtDTA      | 0.138 | 0.893 |
+| GraphDTA       | 0.139 | 0.891 |
+| MT-DTI         | 0.152 | 0.882 |
+| SSM-DTA        | 0.154 | 0.895 |
+| BiFormerDTA    | 0.174 | 0.893 |
+| DeepCDA        | 0.176 | 0.889 |
+| DeepDTA        | 0.196 | 0.864 |
+
+**Matched the best CI on highly sparse KIBA**  
+Training ~30% faster per epoch than GNN-based baselines.
+
+---
+
+### Ablation and Negative Results
+
+- **Freezing encoders:** Underfits, CI drops <0.90
+- **Cross-attention:** Overfits, lower CI
+- **More than 2 Inception blocks:** Overfitting
+- **Larger encoders:** No improvement, more GPU/memory
+- **Self-attention after fusion:** Attention weights collapse, worse CI
+
+---
+
+## Project Structure
+project-root/
+│
+├── cfg/                      # Config files (YAML/JSON for training, data paths, hyperparameters)
+├── src/                      # All source code (models, datasets, train/eval scripts)
+├── data/                     # Raw and preprocessed datasets (not tracked by Git)
+│
+├── requirements.txt          # Python package dependencies
+├── Dockerfile                # Docker image for reproducible runs
+├── train.sh                  # Shell script to launch training inside/outside Docker
+├── README.md                 # This file
+├── .gitignore                # Ignore data, logs, and Python cache
+├── .dockerignore             # Ignore unnecessary files for Docker build
+├── build_push.sh             # (Optional) For image building/deployment, not needed by most users
+│
+└── figures/
+    └── architecture1.png     # Model diagram (see below)
+
