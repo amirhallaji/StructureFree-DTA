@@ -202,7 +202,7 @@ If you use this code or architecture in your work, please cite:
 ```bibtex
 @article{your2025dti,
   title={Structure-Free Drug–Target Affinity Prediction Using Protein and Molecule Language Models},
-  author={Your Name},
+  author={Amir Hallaji , Morteza Mahdavi Mortazavi}}
   journal={},
   year={2025}
 }
