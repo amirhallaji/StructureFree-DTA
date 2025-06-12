@@ -187,23 +187,23 @@ Training ~30% faster per epoch than GNN-based baselines.
 - **Larger encoders:** No improvement, more GPU/memory
 - **Self-attention after fusion:** Attention weights collapse, worse CI
 
----
 
-## Project Structure
-project-root/
-│
-├── cfg/                      # Config files (YAML/JSON for training, data paths, hyperparameters)
-├── src/                      # All source code (models, datasets, train/eval scripts)
-├── data/                     # Raw and preprocessed datasets (not tracked by Git)
-│
-├── requirements.txt          # Python package dependencies
-├── Dockerfile                # Docker image for reproducible runs
-├── train.sh                  # Shell script to launch training inside/outside Docker
-├── README.md                 # This file
-├── .gitignore                # Ignore data, logs, and Python cache
-├── .dockerignore             # Ignore unnecessary files for Docker build
-├── build_push.sh             # (Optional) For image building/deployment, not needed by most users
-│
-└── figures/
-    └── architecture1.png     # Model diagram (see below)
+## Limitations
+
+- **Interpretability**: Sequence-based, so less interpretable than graph-based models (no explicit atom/residue attention)
+- **Dataset-specific tuning**: Current hyperparameters tuned for **Davis/KIBA**; new datasets may need further tuning
+- **Resource constraints**: Large-scale/large-encoder experiments limited by hardware; current setup is SOTA on Davis/KIBA size
+
+
+## Citation
+
+If you use this code or architecture in your work, please cite:
+
+```bibtex
+@article{your2025dti,
+  title={Structure-Free Drug–Target Affinity Prediction Using Protein and Molecule Language Models},
+  author={Your Name},
+  journal={},
+  year={2025}
+}
 
