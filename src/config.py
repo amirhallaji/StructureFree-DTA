@@ -13,9 +13,10 @@ class ModelConfig:
 
 @dataclass
 class DataConfig:
-    train_data_path: str = "data/train.csv"
-    val_data_path: str = "data/val.csv"
-    test_data_path: Optional[str] = None
+    path: str = "data/dataset.csv"
+    test_size: float = 0.2
+    val_size: float = 0.1
+    random_state: int = 42
     batch_size: int = 2
     num_workers: int = 1
     max_molecule_length: int = 32
@@ -66,5 +67,5 @@ class Config:
         import torch
         if self.device == "cuda" and not torch.cuda.is_available():
             print("CUDA not available, using CPU instead")
-            self.device = "cpu" 
+            self.device = "cpu"
 

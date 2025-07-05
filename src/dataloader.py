@@ -3,6 +3,7 @@ from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 import numpy as np
 from transformers import AutoTokenizer
+from sklearn.model_selection import train_test_split
 from typing import Dict, List, Tuple, Optional, Union
 
 
@@ -79,9 +80,10 @@ class CollateManager:
 class DrugTargetDataModule:
     def __init__(
         self,
-        train_data_path: str,
-        val_data_path: str,
-        test_data_path: Optional[str] = None,
+        data_path: str,
+        test_size: float = 0.2,
+        val_size: float = 0.1,
+        random_state: int = 0,
         molecule_model_name: str = "DeepChem/ChemBERTa-77M-MLM",
         protein_model_name: str = "facebook/esm2_t6_8M_UR50D",
         batch_size: int = 32,
@@ -89,9 +91,10 @@ class DrugTargetDataModule:
         max_molecule_length: int = 128,
         max_protein_length: int = 1024,
     ):
-        self.train_data_path = train_data_path
-        self.val_data_path = val_data_path
-        self.test_data_path = test_data_path
+        self.data_path = data_path
+        self.test_size = test_size
+        self.val_size = val_size
+        self.random_state = random_state
         self.molecule_model_name = molecule_model_name
         self.protein_model_name = protein_model_name
         self.batch_size = batch_size
@@ -131,19 +134,39 @@ class DrugTargetDataModule:
         return molecules, proteins, labels
     
     def _setup(self):
-        """Setup datasets"""
-        # Load training data
-        train_molecules, train_proteins, train_labels = self._load_data(self.train_data_path)
-        self.train_dataset = DrugTargetDataset(train_molecules, train_proteins, train_labels)
+        """Setup datasets with train/val/test split"""
+        # Load all data from single path
+        molecules, proteins, labels = self._load_data(self.data_path)
         
-        # Load validation data
-        val_molecules, val_proteins, val_labels = self._load_data(self.val_data_path)
-        self.val_dataset = DrugTargetDataset(val_molecules, val_proteins, val_labels)
-        
-        # Load test data if available
-        if self.test_data_path:
-            test_molecules, test_proteins, test_labels = self._load_data(self.test_data_path)
+        # First split: separate test set if test_size > 0
+        if self.test_size > 0:
+            train_val_molecules, test_molecules, train_val_proteins, test_proteins, train_val_labels, test_labels = train_test_split(
+                molecules, proteins, labels, 
+                test_size=self.test_size, 
+                random_state=self.random_state,
+                stratify=None  # Can be modified if stratification is needed
+            )
             self.test_dataset = DrugTargetDataset(test_molecules, test_proteins, test_labels)
+        else:
+            train_val_molecules, train_val_proteins, train_val_labels = molecules, proteins, labels
+            self.test_dataset = None
+        
+        # Second split: separate validation set from remaining data
+        if self.val_size > 0:
+            # Calculate validation size relative to remaining data
+            val_size_adjusted = self.val_size / (1 - self.test_size) if self.test_size > 0 else self.val_size
+            train_molecules, val_molecules, train_proteins, val_proteins, train_labels, val_labels = train_test_split(
+                train_val_molecules, train_val_proteins, train_val_labels,
+                test_size=val_size_adjusted,
+                random_state=self.random_state,
+                stratify=None  # Can be modified if stratification is needed
+            )
+            self.train_dataset = DrugTargetDataset(train_molecules, train_proteins, train_labels)
+            self.val_dataset = DrugTargetDataset(val_molecules, val_proteins, val_labels)
+        else:
+            # No validation set, use all remaining data for training
+            self.train_dataset = DrugTargetDataset(train_val_molecules, train_val_proteins, train_val_labels)
+            self.val_dataset = None
     
     def train_dataloader(self) -> DataLoader:
         """Return the training dataloader"""
@@ -156,16 +179,18 @@ class DrugTargetDataModule:
             pin_memory=True
         )
     
-    def val_dataloader(self) -> DataLoader:
-        """Return the validation dataloader"""
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            collate_fn=self.collate_manager,
-            pin_memory=True
-        )
+    def val_dataloader(self) -> Optional[DataLoader]:
+        """Return the validation dataloader if available"""
+        if self.val_dataset:
+            return DataLoader(
+                self.val_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.num_workers,
+                collate_fn=self.collate_manager,
+                pin_memory=True
+            )
+        return None
     
     def test_dataloader(self) -> Optional[DataLoader]:
         """Return the test dataloader if available"""

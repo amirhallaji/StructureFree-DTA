@@ -44,9 +44,10 @@ def update_config_from_yaml(config, yaml_config):
     config.model.dropout = model_config.get('dropout', config.model.dropout)
     
     # Update data config
-    config.data.train_data_path = data_config.get('train_data_path', config.data.train_data_path)
-    config.data.val_data_path = data_config.get('val_data_path', config.data.val_data_path)
-    config.data.test_data_path = data_config.get('test_data_path', config.data.test_data_path)
+    config.data.path = data_config.get('path', config.data.path)
+    config.data.test_size = data_config.get('test_size', config.data.test_size)
+    config.data.val_size = data_config.get('val_size', config.data.val_size)
+    config.data.random_state = data_config.get('random_state', config.data.random_state)
     config.data.batch_size = data_config.get('batch_size', config.data.batch_size)
     config.data.num_workers = data_config.get('num_workers', config.data.num_workers)
     config.data.max_molecule_length = data_config.get('max_molecule_length', config.data.max_molecule_length)
@@ -121,9 +122,10 @@ def main():
     
     # Create data module
     data_module = DrugTargetDataModule(
-        train_data_path=config.data.train_data_path,
-        val_data_path=config.data.val_data_path,
-        test_data_path=config.data.test_data_path,
+        data_path=config.data.path,
+        test_size=getattr(config.data, 'test_size', 0.2),
+        val_size=getattr(config.data, 'val_size', 0.1),
+        random_state=getattr(config.data, 'random_state', 0),
         molecule_model_name=config.model.molecule_model_name,
         protein_model_name=config.model.protein_model_name,
         batch_size=config.data.batch_size,
@@ -135,6 +137,10 @@ def main():
     # Create dataloaders
     train_dataloader = data_module.train_dataloader()
     val_dataloader = data_module.val_dataloader()
+    
+    # Check if validation dataloader exists
+    if val_dataloader is None:
+        raise ValueError("Validation dataloader is None. Please ensure val_size > 0 in your configuration.")
     
     # Create model
     model = AffinityPredictor(
