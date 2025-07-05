@@ -24,8 +24,6 @@ _A sequence-based, language-model-driven framework for drug–target binding reg
   - [Reproducibility](#reproducibility)
 - [Figures](#figures)
 - [Limitations](#limitations)
-- [Citation](#citation)
-- [References](#references)
 
 ---
 
@@ -145,7 +143,7 @@ All results averaged over 5-fold CV, random split, seed=0.
 
 | Method         | MSE   | CI    |
 |----------------|-------|-------|
-| **Our Method** | 0.182 | 0.920 |
+| **Our Method** | **0.182** | **0.920** |
 | 3DProtDTA      | 0.184 | 0.917 |
 | MGraphDTA      | 0.207 | 0.900 |
 | BiFormerDTA    | 0.211 | 0.901 |
@@ -164,8 +162,8 @@ Residual Inception blocks are sample-efficient; full fine-tuning helps the most.
 
 | Method         | MSE   | CI    |
 |----------------|-------|-------|
-| MGraphDTA      | 0.128 | 0.902 |
-| **Our Method** | 0.135 | 0.902 |
+| **MGraphDTA**      | **0.128** | **0.902** |
+| **Our Method** | 0.135 | **0.902** |
 | 3DProtDTA      | 0.138 | 0.893 |
 | GraphDTA       | 0.139 | 0.891 |
 | MT-DTI         | 0.152 | 0.882 |
@@ -190,20 +188,8 @@ Training ~30% faster per epoch than GNN-based baselines.
 
 ## Limitations
 
-- **Interpretability**: Sequence-based, so less interpretable than graph-based models (no explicit atom/residue attention)
 - **Dataset-specific tuning**: Current hyperparameters tuned for **Davis/KIBA**; new datasets may need further tuning
 - **Resource constraints**: Large-scale/large-encoder experiments limited by hardware; current setup is SOTA on Davis/KIBA size
 
 
-## Citation
-
-If you use this code or architecture in your work, please cite:
-
-```bibtex
-@article{your2025dti,
-  title={Structure-Free Drug–Target Affinity Prediction Using Protein and Molecule Language Models},
-  author={Amir Hallaji , Morteza Mahdavi Mortazavi}}
-  journal={},
-  year={2025}
-}
 
