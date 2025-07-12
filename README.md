@@ -16,13 +16,6 @@ _A sequence-based, language-model-driven framework for drug–target binding reg
   - [Performance on Davis](#performance-on-davis)
   - [Performance on KIBA](#performance-on-kiba)
   - [Ablation and Negative Results](#ablation-and-negative-results)
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Training](#training)
-  - [Configuration](#configuration)
-  - [Reproducibility](#reproducibility)
-- [Figures](#figures)
 - [Limitations](#limitations)
 
 ---
@@ -66,7 +59,7 @@ The framework consists of:
    - **Cosine Similarity Loss** (to encourage correct ranking, i.e., high Concordance Index)
    - Combined as: `L = α * L_cos + (1-α) * L_mse` (α=0.5 by default)
 
-![Model Architecture](./figures/architecture1.png)
+![Model Architecture](./img/architecture.png)
 
 ---
 
