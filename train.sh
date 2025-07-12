@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CONFIG_FILE=${1:-config.yaml}
+CONFIG_FILE=${1:-cfg/config.yaml}
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "Config file $CONFIG_FILE not found!"
     exit 1
