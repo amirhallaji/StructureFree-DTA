@@ -14,7 +14,7 @@ class ModelConfig:
 @dataclass
 class DataConfig:
     path: str = "data/dataset.csv"
-    test_size: float = 0.2
+    n_folds: int = 5
     val_size: float = 0.1
     random_state: int = 42
     batch_size: int = 2
@@ -48,7 +48,7 @@ class LoggingConfig:
 
 @dataclass
 class DistributedConfig:
-    distributed_backend: str = "none"  # Options: none, ddp, fsdp
+    distributed_backend: str = "none"
     find_unused_parameters: bool = False
     fsdp_config: Optional[Dict[str, Any]] = None
 
@@ -68,4 +68,3 @@ class Config:
         if self.device == "cuda" and not torch.cuda.is_available():
             print("CUDA not available, using CPU instead")
             self.device = "cpu"
-

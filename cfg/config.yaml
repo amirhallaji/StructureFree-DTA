@@ -11,13 +11,13 @@ model:
 # Data Configuration
 data:
   path: "hf://datasets/amirhallaji/davis/davis.csv"
-  test_size: 0.2
+  n_folds: 5
   val_size: 0.1
   random_state: 0
   batch_size: 64
   num_workers: 16
   max_molecule_length: 128
-  max_protein_length: 1024
+  max_protein_length: 128
 
 # Training Configuration
 training:
@@ -42,7 +42,7 @@ logging:
 
 # Distributed Training Configuration
 distributed:
-  distributed_backend: "none"  # Options: none, ddp, fsdp
+  distributed_backend: "none"
   find_unused_parameters: false
   fsdp_config: null
 
