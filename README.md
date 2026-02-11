@@ -15,6 +15,7 @@ _A sequence-based, language-model-driven framework for drug–target binding reg
 - [Results](#results)
   - [Performance on Davis](#performance-on-davis)
   - [Performance on KIBA](#performance-on-kiba)
+  - [Performance on BindingDB](#performance-on-bindingdb)
   - [Ablation and Negative Results](#ablation-and-negative-results)
 - [Limitations](#limitations)
 
@@ -29,7 +30,10 @@ Key features:
 - **No need for 3D structures or molecular graphs**
 - **Efficient fusion via Residual Inception blocks**
 - **Hybrid loss: regression + ranking**
-- **SOTA results on Davis and KIBA datasets**
+- **SOTA results on Davis, KIBA, and BindingDB datasets**
+
+### Resources
+- **Web-based tool for prediction:** [HuggingFace Space](https://huggingface.co/spaces/amirhallaji/StructureFree-DTA)
 
 ---
 
@@ -75,10 +79,16 @@ The framework consists of:
   - Highly sparse (25% populated)
   - Target: Unified affinity score from Ki/Kd/IC50
 
-| Dataset | Proteins | Ligands | Samples  | Sparsity   |
-|---------|----------|---------|----------|------------|
-| Davis   | 442      | 68      | 30,056   | 0%         |
-| KIBA    | 229      | 2,111   | 118,254  | ~75%       |
+- **BindingDB**
+  - 1,520 proteins, 17,936 ligands, 57,002 affinity samples
+  - Extremely sparse (~0.2% populated)
+  - Target: Dissociation constant (Kd)
+
+| Dataset   | Proteins | Ligands | Samples  | Sparsity   |
+|-----------|----------|---------|----------|------------|
+| Davis     | 442      | 68      | 30,056   | ~0%        |
+| KIBA      | 229      | 2,111   | 118,254  | ~75%       |
+| BindingDB | 1,520    | 17,936  | 57,002   | ~99.8%     |
 
 ---
 
@@ -136,7 +146,7 @@ All results averaged over 5-fold CV, random split, seed=0.
 
 | Method         | MSE   | CI    |
 |----------------|-------|-------|
-| **Our Method** | **0.182** | **0.920** |
+| **Our Method** | **0.182** | **0.915** |
 | 3DProtDTA      | 0.184 | 0.917 |
 | MGraphDTA      | 0.207 | 0.900 |
 | BiFormerDTA    | 0.211 | 0.901 |
@@ -167,6 +177,23 @@ Residual Inception blocks are sample-efficient; full fine-tuning helps the most.
 
 **Matched the best CI on highly sparse KIBA**  
 Training ~30% faster per epoch than GNN-based baselines.
+
+---
+
+### Performance on BindingDB
+
+| Method         | MSE   | CI    |
+|----------------|-------|-------|
+| **Our Method** | 0.467 | **0.888** |
+| BridgeDPI      | **0.448** | 0.869 |
+| SubMDTA        | 0.456 | 0.867 |
+| MGraphDTA      | 0.488 | 0.864 |
+| GraphDTA       | 0.503 | 0.857 |
+| DeepCDA        | 0.808 | 0.822 |
+| DeepDTA        | 0.824 | 0.812 |
+
+**SOTA CI on the highly sparse BindingDB dataset**  
+Our sequence-based approach maintains strong ranking performance even with ~99.8% sparsity.
 
 ---
 
